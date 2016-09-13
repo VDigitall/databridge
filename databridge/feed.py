@@ -71,7 +71,8 @@ class APIRetreiver(object):
         backward['offset'] = r['next_page']['offset']
         forward['offset'] = r['prev_page']['offset']
         self.tender_queue.put(filter(self.filter_callback, r['data']))
-        logger.info('Sync: initial sync params forward: {}, backward: {}'.format(forward, backward))
+        logger.info('Sync: initial sync params forward: '
+                    '{}, backward: {}'.format(forward, backward))
         return forward, backward
 
     def _start_sync_workers(self):

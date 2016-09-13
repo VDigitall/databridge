@@ -3,7 +3,7 @@ from setuptools import setup
 install_requires = [
     'gevent',
     'requests',
-    'ujson'
+    'CouchDB'
 ]
 
 
@@ -13,5 +13,5 @@ setup(
     packages=[
         'databridge',
     ],
-    install_requires=install_requires
+    install_requires=install_requires,
 )

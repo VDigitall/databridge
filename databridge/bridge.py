@@ -1,11 +1,13 @@
 import gevent
 import logging
 import requests
+import functools
+import couchdb
 from gevent.queue import Queue, Full
 from .client import APICLient
+from .feed import APIRetreiver
+from .helpers import check_doc, create_db_url
 
-
-QUEUE_FULL_DELAY = 5
 
 logger = logging.getLogger(__name__)
 
@@ -18,39 +20,42 @@ class APIDataBridge(object):
                 "Expected a dict as config, got {}".format(type(config))
             )
 
-        self.api_host = config.get('api_host')
-        self.api_version = config.get('api_version')
-        self.api_key = config.get('api_key')
-        self.tender_queue = Queue(maxsize=config.get('queue_max_size', 500))
-
-    def _init_clients(self):
-        self.forward_client = APICLient(
-            self.api_key,
-            self.api_host,
-            self.api_version
+        self.tenders_client = APICLient(
+            config.get('api_key'),
+            config.get('api_host'),
+            config.get('api_version')
         )
-        self.backward_client = APICLient(
-            self.api_key,
-            self.api_host,
-            self.api_version
-        )
-        self.origin_cookie = self.forward_client.session.cookies
-        self.backward_client.session.cookies = self.origin_cookie
+        server = couchdb.Server(create_db_url(
+            config.get('username', ''),
+            config.get('password', ''),
+            config.get('host'),
+            config.get('port')
+        ))
+        self.db_name = config.get('db_name')
 
-    def _init_syncronization(self):
-        self._init_clients()
+        if self.db_name not in server:
+            server.create(self.db_name)
+        self.db = server[self.db_name]
 
-        forward = {'feed': 'chages'}
-        backward = {'feed': 'changes', 'descending': True}
-        try:
-            r = self.backward_client.get_tenders(params=backward)
-        except requests.exceptions.RequestException as e:
-            logger.error('Error on initiaziong')
+        filter_func = functools.partial(check_doc, db=self.db)
+        config['filter_callback'] = filter_func
 
-        backward['offset'] = r['next_page']['offset']
-        forward['offset'] = r['prev_page']['offset']
-        self.tender_queue.put(r['data'])
-        self._start_sync_workers()
+        self.retreiver = APIRetreiver(config)
 
-    def _start_sync_workers(self):
 
+    def run(self):
+        for item in self.retreiver.get_tenders():
+            logger.info(item)
+
+
+
+def test_run():
+    bridge = APIDataBridge({
+        'api_host': 'https://public.api.openprocurement.org',
+        'api_version': '2',
+        'api_key': '',
+        'host': '127.0.0.1',
+        'port': '5984',
+        'db_name': 'tenders'
+    })
+    bridge.run()

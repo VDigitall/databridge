@@ -4,6 +4,7 @@ import requests
 from gevent.queue import Queue, Full
 from gevent.event import Event
 from .contrib.client import APICLient
+from .contrib.retreive import RetreiverForward, RetreiverBackward
 from .exceptions import LBMismatchError
 
 
@@ -41,6 +42,8 @@ class APIRetreiver(object):
         self.forward_worker_dead.set()
         self.backward_worker_dead = Event()
         self.backward_worker_dead.set()
+        if 'session' in options:
+            self.session = options.pop('session')
 
         self._init_clients()
 
@@ -49,12 +52,14 @@ class APIRetreiver(object):
         self.forward_client = APICLient(
             self.api_key,
             self.api_host,
-            self.api_version
+            self.api_version,
+            session=self.session
         )
         self.backward_client = APICLient(
             self.api_key,
             self.api_host,
-            self.api_version
+            self.api_version,
+            session=self.session
         )
 
         self.origin_cookie = self.forward_client.session.cookies
@@ -62,7 +67,7 @@ class APIRetreiver(object):
 
     def _get_sync_point(self):
         logger.info('Sync: initializing sync')
-        forward = {'feed': 'changes'} 
+        forward = {'feed': 'changes'}
         backward = {'feed': 'changes', 'descending': '1'}
         if getattr(self, '_extra', ''):
             [x.update(self._extra) for x in [forward, backward]]
@@ -81,84 +86,7 @@ class APIRetreiver(object):
             gevent.spawn(self._forward_worker, forward),
             gevent.spawn(self._backward_worker, backward),
         ]
-
-    def _forward_worker(self, params):
-        worker = "Forward worker:"
-        logger.info('{} starting'.format(worker))
-        r = self.forward_client.get_tenders(params)
-        if self.forward_client.session.cookies != self.origin_cookie:
-            raise LBMismatchError
-
-        try:
-            while True:
-                try:
-                    while r['data']:
-                        try:
-                            self.tender_queue.put(
-                                filter(self.filter_callback, r['data'])
-                            )
-                        except Full:
-                            while self.tender_queue.full():
-                                gevent.sleep(QUEUE_FULL_DELAY)
-                                self.tender_queue.put(
-                                    filter(self.filter_callback, r['data'])
-                                )
-                        params['offset'] = r['next_page']['offset']
-
-                        r = self.forward_client.get_tenders(params)
-                        if self.forward_client.session.cookies != self.origin_cookie:
-                            raise LBMismatchError
-                        if r['data']:
-                            gevent.sleep(FORWARD_WORKER_SLEEP)
-                    logger.warn('{} got empty listing. Sleep'.format(worker))
-                    gevent.sleep(ON_EMPTY_DELAY)
-
-                except LBMismatchError:
-                    logger.info('LB mismatch error on backward worker')
-                    self.reinit_clients.set()
-
-        except Exception as e:
-            logger.error("{} down! Error: {}".format(worker, e))
-            self.forward_worker_dead.set()
-        else:
-            logger.error("{} finished.".format(worker))
-
-    def _backward_worker(self, params):
-        worker = "Backward worker: "
-        logger.info('{} staring'.format(worker))
-        try:
-            while True:
-                try:
-                    r = self.backward_client.get_tenders(params)
-                    if not r['data']:
-                        logger.debug('{} empty listing..exiting'.format(worker))
-                        break
-                    gevent.sleep(BACKWARD_WOKER_DELAY)
-                    if self.backward_client.session.cookies != self.origin_cookie:
-                        raise LBMismatchError
-                    try:
-                        self.tender_queue.put(
-                            filter(self.filter_callback, r['data'])
-                        )
-                    except Full:
-                        logger.error('full queue')
-                        while self.tender_queue.full():
-                            gevent.sleep(QUEUE_FULL_DELAY)
-                            self.tender_queue.put(
-                                filter(self.filter_callback, r['data'])
-                            )
-
-                    params['offset'] = r['next_page']['offset']
-                except LBMismatchError:
-                    logger.info('{} LB mismatch error'.format(worker))
-                    if not self.reinit_clients.is_set():
-                        self.reinit_clients.set()
-
-        except Exception as e:
-            logger.error("{} down! Error: {}".format(worker, e))
-            self.forward_worker_dead.set()
-        else:
-            logger.error("{} finished.".format(worker))
+        logger.debug('Started sync workers')
 
     def _restart_workers(self):
         self._init_clients()
@@ -166,16 +94,20 @@ class APIRetreiver(object):
         self._start_sync_workers()
         return self.workers
 
-    def get_tenders(self):
+    def __iter__(self):
         self._start_sync_workers()
         forward, backward = self.workers
         try:
             while True:
                 if self.tender_queue.empty():
                     gevent.sleep(EMPTY_QUEUE_DELAY)
-                if (forward.dead or forward.ready()) or \
-                        (backward.dead and not backward.successful()):
+                if forward.dead or forward.ready():
                     forward, backward = self._restart_workers()
+                if (backward.dead or backward.ready()) and not backward.successful():
+                    logger.info('Backward worker not active. restarting')
+                    forward, backward = self._restart_workers()
+                if backward.successful():
+                    logger.info('Backward worker finished')
                 while not self.tender_queue.empty():
                     yield self.tender_queue.get()
         except Exception as e:

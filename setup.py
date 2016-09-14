@@ -3,7 +3,10 @@ from setuptools import setup
 install_requires = [
     'gevent',
     'requests',
-    'CouchDB'
+#    'couchdbreq',
+    'grequests',
+    'PyYaml',
+    'ujson'
 ]
 
 
@@ -13,5 +16,10 @@ setup(
     packages=[
         'databridge',
     ],
+    entry_points={
+        'console_scripts': [
+            'bridge = databridge.run:run'
+        ]
+    },
     install_requires=install_requires,
 )

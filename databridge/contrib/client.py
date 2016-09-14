@@ -1,7 +1,8 @@
 import requests
 import grequests
 import logging
-from .helpers import RetryAdapter
+from databridge.helpers import RetryAdapter
+from ujson import loads
 
 
 logger = logging.getLogger(__name__)
@@ -54,4 +55,4 @@ class APICLient(object):
                 for tender_id in tender_ids]
         r = (grequests.request('GET', url, session=self.session)
              for url in urls)
-        return grequests.map(r, size=20)
+        return [loads(t.text)['data'] for t in grequests.map(r, size=20)]

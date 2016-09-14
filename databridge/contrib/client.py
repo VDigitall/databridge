@@ -1,4 +1,5 @@
 import requests
+import grequests
 import logging
 from .helpers import RetryAdapter
 
@@ -47,3 +48,10 @@ class APICLient(object):
             return resp.json()
         else:
             resp.raise_for_status()
+
+    def fetch(self, tender_ids, params=None):
+        urls = ['{}/{}'.format(self.resourse_url, tender_id['id'])
+                for tender_id in tender_ids]
+        r = (grequests.request('GET', url, session=self.session)
+             for url in urls)
+        return grequests.map(r, size=20)

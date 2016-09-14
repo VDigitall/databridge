@@ -3,7 +3,7 @@ import logging
 import requests
 from gevent.queue import Queue, Full
 from gevent.event import Event
-from .client import APICLient
+from .contrib.client import APICLient
 from .exceptions import LBMismatchError
 
 
@@ -16,7 +16,6 @@ WATCH_DELAY = 1
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class APIRetreiver(object):
@@ -63,13 +62,14 @@ class APIRetreiver(object):
 
     def _get_sync_point(self):
         logger.info('Sync: initializing sync')
-        forward = {'feed': 'changes'}
+        forward = {'feed': 'changes'} 
         backward = {'feed': 'changes', 'descending': '1'}
         if getattr(self, '_extra', ''):
             [x.update(self._extra) for x in [forward, backward]]
         r = self.backward_client.get_tenders(backward)
         backward['offset'] = r['next_page']['offset']
         forward['offset'] = r['prev_page']['offset']
+        logger.error(forward)
         self.tender_queue.put(filter(self.filter_callback, r['data']))
         logger.info('Sync: initial sync params forward: '
                     '{}, backward: {}'.format(forward, backward))
@@ -83,7 +83,7 @@ class APIRetreiver(object):
         ]
 
     def _forward_worker(self, params):
-        worker = "Forward worker: "
+        worker = "Forward worker:"
         logger.info('{} starting'.format(worker))
         r = self.forward_client.get_tenders(params)
         if self.forward_client.session.cookies != self.origin_cookie:
@@ -105,7 +105,7 @@ class APIRetreiver(object):
                                 )
                         params['offset'] = r['next_page']['offset']
 
-                        r = self.forward_client.get_tender(params)
+                        r = self.forward_client.get_tenders(params)
                         if self.forward_client.session.cookies != self.origin_cookie:
                             raise LBMismatchError
                         if r['data']:

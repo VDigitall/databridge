@@ -36,6 +36,5 @@ def run():
     storage = Storage(config, session=SESSION, adapter=ADAPTER)
     filter_func = functools.partial(check_doc, storage.db)
     bridge = APIDataBridge(config, filter_feed=filter_func)
-    bridge.add_worker(Fetch, config)
-    bridge.add_worker(Save, config)
+    bridge.add_workers([Fetch, Save], config)
     bridge.run()

@@ -1,3 +1,5 @@
+from gevent import monkey
+monkey.patch_all()
 import argparse
 import requests
 import os.path
@@ -32,9 +34,15 @@ def run():
     if 'logging' in config:
         dictConfig(config['logging'])
     else:
-        logging.basicConfig(level=logging.INFO)
-    storage = Storage(config, session=SESSION, adapter=ADAPTER)
+        logging.basicConfig(level=logging.DEBUG)
+
+
+    storage = Storage(config)
     filter_func = functools.partial(check_doc, storage.db)
-    bridge = APIDataBridge(config, filter_feed=filter_func)
+    bridge = APIDataBridge(config, filter_feed=filter_func, session=SESSION)
+    config.update(dict(
+        storage=storage,
+        session=SESSION
+    ))
     bridge.add_workers([Fetch, Save], config)
     bridge.run()

@@ -1,12 +1,7 @@
 import gevent
 import logging
-import requests
-import functools
-import couchdb
-from gevent.queue import Queue, Full
-from .client import APICLient
+from gevent.queue import Queue
 from .feed import APIRetreiver
-from .helpers import check_doc, create_db_url
 
 
 logger = logging.getLogger(__name__)
@@ -14,49 +9,40 @@ logger = logging.getLogger(__name__)
 
 class APIDataBridge(object):
 
-    def __init__(self, config):
+    def __init__(self, config, filter_feed=lambda x: x):
         if not isinstance(config, dict):
             raise TypeError(
                 "Expected a dict as config, got {}".format(type(config))
             )
+        self.retreiver = APIRetreiver(config, filter_callback=filter_feed)
+        self.workers = {}
+        self.src_queue = self.retreiver.get_tenders
 
-        self.tenders_client = APICLient(
-            config.get('api_key'),
-            config.get('api_host'),
-            config.get('api_version')
+    def add_worker(self, worker, config=None):
+        setattr(self, "{}_queue".format(worker.__name__), Queue(maxsize=250))
+        self.workers[worker.__name__] = worker(
+            self.src_queue,
+            getattr(self, "{}_queue".format(worker.__name__)),
+            config
         )
-        server = couchdb.Server(create_db_url(
-            config.get('username', ''),
-            config.get('password', ''),
-            config.get('host'),
-            config.get('port')
-        ))
-        self.db_name = config.get('db_name')
+        self.src_queue = getattr(self, "{}_queue".format(worker.__name__))
 
-        if self.db_name not in server:
-            server.create(self.db_name)
-        self.db = server[self.db_name]
-
-        filter_func = functools.partial(check_doc, self.db)
-
-        self.retreiver = APIRetreiver(config, filter_callback=filter_func)
-
+    def _start_workers(self):
+        for attr, worker in self.workers.items():
+            worker.start()
 
     def run(self):
-        for item in self.retreiver.get_tenders():
-            logger.info(item)
-
-
-
-def test_run():
-    bridge = APIDataBridge({
-        'api_host': 'https://public.api.openprocurement.org',
-        'api_version': '2',
-        'api_key': '',
-        'username': 'admin',
-        'password': 'admin',
-        'host': '127.0.0.1',
-        'port': '5984',
-        'db_name': 'tenders_test'
-    })
-    bridge.run()
+        logger.debug('{}: starting'.format(self.__class__))
+        self._start_workers()
+        while True:
+            while not self.src_queue.empty():
+                print self.src_queue.get()
+                for attr, worker in self.workers.items():
+                    if worker.dead or worker.ready():
+                        if worker.expection:
+                            logger.error('Worker: {} error {}'.format(
+                                worker.__class, worker.expection))
+                        else:
+                            logger.warn(
+                                'Worker {} not active.. restaring'.format(worker.__class__))
+            gevent.sleep(3)

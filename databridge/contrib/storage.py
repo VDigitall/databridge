@@ -22,6 +22,6 @@ class Storage(object):
             session = requests.Session()
         if not adapter:
             adapter = HTTPAdapter(pool_maxsize=50, pool_connections=100)
-        server = couchdbreq.Server(server_url, session=session)
         session.mount(server_url, adapter)
+        server = couchdbreq.Server(server_url, session=session)
         self.db = server.get_or_create_db(config.get('db_name', 'tenders_db'))

@@ -25,7 +25,7 @@ def save_or_update(db, doc):
 
 
 def check_doc(db, feed_item):
-    if feed_item not in db:
+    if feed_item['id'] not in db:
         return True
     if db.get(feed_item['id'])['dateModified'] < feed_item['dateModified']:
         return True

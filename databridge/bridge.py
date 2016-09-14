@@ -37,10 +37,9 @@ class APIDataBridge(object):
             server.create(self.db_name)
         self.db = server[self.db_name]
 
-        filter_func = functools.partial(check_doc, db=self.db)
-        config['filter_callback'] = filter_func
+        filter_func = functools.partial(check_doc, self.db)
 
-        self.retreiver = APIRetreiver(config)
+        self.retreiver = APIRetreiver(config, filter_callback=filter_func)
 
 
     def run(self):
@@ -54,8 +53,10 @@ def test_run():
         'api_host': 'https://public.api.openprocurement.org',
         'api_version': '2',
         'api_key': '',
+        'username': 'admin',
+        'password': 'admin',
         'host': '127.0.0.1',
         'port': '5984',
-        'db_name': 'tenders'
+        'db_name': 'tenders_test'
     })
     bridge.run()

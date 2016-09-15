@@ -1,11 +1,10 @@
 import gevent
 import logging
-import requests
-from gevent.queue import Queue, Full
-from gevent.event import Event
+import sys
+from gevent.queue import Queue
 from .contrib.client import APICLient
 from .contrib.retreive import RetreiverForward, RetreiverBackward
-from .exceptions import LBMismatchError
+from .contrib.supervisor import RetreiversSupervisor
 
 
 QUEUE_FULL_DELAY = 5
@@ -60,7 +59,6 @@ class APIRetreiver(object):
         self.origin_cookie = self.forward_client.session.cookies
         self.backward_client.session.cookies = self.origin_cookie
 
-
     def _get_sync_point(self):
         logger.info('Sync: initializing sync')
         forward = {'feed': 'changes'}
@@ -76,7 +74,8 @@ class APIRetreiver(object):
                     '{}, backward: {}'.format(forward, backward))
         return forward, backward
 
-    def _start_sync_workers(self):
+    def _start(self):
+        logger.info('{} starting'.format(self.__class__))
         forward, backward = self._get_sync_point()
         self.forward_worker = RetreiverForward(
             self.forward_client,
@@ -94,32 +93,39 @@ class APIRetreiver(object):
             self.filter_callback,
             logger
         )
-        self.workers = [self.forward_worker, self.backward_worker]
-        for g in self.workers:
-            g.start()
-        logger.debug('Started sync workers')
+        self.supervisor = RetreiversSupervisor(
+            self.forward_worker,
+            self.backward_worker,
+            logger,
+            [Exception],
+            delay=3
+        )
+        self.supervisor.link_exception(self._restart)
+        self.supervisor.start()
 
-    def _restart_workers(self):
-        self._init_clients()
-        self.forward_worker.kill()
-        self.backward_worker.kill()
-        self._start_sync_workers()
-        return self.workers
+    def _restart(self, worker):
+        if worker is not None or worker.ready():
+            worker.kill()
+        worker.start()
 
     def __iter__(self):
-        self._start_sync_workers()
-        forward, backward = self.workers
+        try:
+            self._start()
+        except Exception as e:
+            logger.error('Error during start {}'.format(e))
+            sys.exit(2)
         try:
             while True:
                 if self.tender_queue.empty():
                     gevent.sleep(EMPTY_QUEUE_DELAY)
-                if forward.dead or forward.ready():
-                    forward, backward = self._restart_workers()
-                if (backward.dead or backward.ready()) and not backward.successful():
-                    logger.info('Backward worker not active. restarting')
-                    forward, backward = self._restart_workers()
-                if backward.successful():
-                    logger.info('Backward worker finished')
+                try:
+                    res = self.supervisor.get(block=False)
+                except gevent.Timeout:
+                    pass
+                else:
+                    if res == 0:
+                        self._restart(self.supervisor)
+
                 while not self.tender_queue.empty():
                     yield self.tender_queue.get()
         except Exception as e:

@@ -1,9 +1,9 @@
 from requests.adapters import HTTPAdapter
 
 
-RetryAdapter = HTTPAdapter(max_retries=5,
-                           pool_connections=100,
-                           pool_maxsize=50)
+APIAdapter = HTTPAdapter(max_retries=5,
+                         pool_connections=50,
+                         pool_maxsize=30)
 
 
 def create_db_url(username, passwd, host, port):

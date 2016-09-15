@@ -104,7 +104,7 @@ class APIRetreiver(object):
         self.supervisor.start()
 
     def _restart(self, worker):
-        if worker is not None or worker.ready():
+        if worker is not None or not worker.ready():
             worker.kill()
         worker.start()
 

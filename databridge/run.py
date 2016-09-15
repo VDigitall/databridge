@@ -18,7 +18,8 @@ from .helpers import check_doc
 ADAPTER = HTTPAdapter(pool_maxsize=50, pool_connections=100)
 SESSION = requests.Session()
 LOGGER = logging.getLogger(__name__)
-
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 def run():
     parser = argparse.ArgumentParser('API databridge')

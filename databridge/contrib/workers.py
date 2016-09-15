@@ -26,11 +26,10 @@ class Fetch(gevent.Greenlet):
         while True:
             for feed in self.source:
                 resp = self.client.fetch(feed)
-                #for tender in feed:
-                #    resp = self.client.get_tender(tender['id'])
                 self.dest.put(resp)
                 gevent.sleep(2)
             gevent.sleep(2)
+        return 1
 
 
 class Save(gevent.Greenlet):
@@ -55,4 +54,5 @@ class Save(gevent.Greenlet):
                     else:
                         self.dest.put('Save doc; {}'.format(tender['id']))
                         self.storage.db.save_doc(tender)
-        gevent.sleep(2)
+            gevent.sleep(2)
+        return 1

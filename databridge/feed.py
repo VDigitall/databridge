@@ -26,7 +26,6 @@ class APIRetreiver(object):
             raise TypeError(
                 "Expected a dict as config, got {}".format(type(config))
             )
-
         self.api_host = config.get('api_host')
         self.api_version = config.get('api_version')
         self.api_key = config.get('api_key')
@@ -38,10 +37,6 @@ class APIRetreiver(object):
 
         self.filter_callback = options.get('filter_callback', lambda x: x)
 
-        self.forward_worker_dead = Event()
-        self.forward_worker_dead.set()
-        self.backward_worker_dead = Event()
-        self.backward_worker_dead.set()
         if 'session' in options:
             self.session = options.pop('session')
 
@@ -53,17 +48,18 @@ class APIRetreiver(object):
             self.api_key,
             self.api_host,
             self.api_version,
-            session=self.session
+            session=self.session or None
         )
         self.backward_client = APICLient(
             self.api_key,
             self.api_host,
             self.api_version,
-            session=self.session
+            session=self.session or None
         )
 
         self.origin_cookie = self.forward_client.session.cookies
         self.backward_client.session.cookies = self.origin_cookie
+
 
     def _get_sync_point(self):
         logger.info('Sync: initializing sync')
@@ -82,15 +78,31 @@ class APIRetreiver(object):
 
     def _start_sync_workers(self):
         forward, backward = self._get_sync_point()
-        self.workers = [
-            gevent.spawn(self._forward_worker, forward),
-            gevent.spawn(self._backward_worker, backward),
-        ]
+        self.forward_worker = RetreiverForward(
+            self.forward_client,
+            forward,
+            self.origin_cookie,
+            self.tender_queue,
+            self.filter_callback,
+            logger
+        )
+        self.backward_worker = RetreiverBackward(
+            self.backward_client,
+            backward,
+            self.origin_cookie,
+            self.tender_queue,
+            self.filter_callback,
+            logger
+        )
+        self.workers = [self.forward_worker, self.backward_worker]
+        for g in self.workers:
+            g.start()
         logger.debug('Started sync workers')
 
     def _restart_workers(self):
         self._init_clients()
-        gevent.killall(self.workers)
+        self.forward_worker.kill()
+        self.backward_worker.kill()
         self._start_sync_workers()
         return self.workers
 

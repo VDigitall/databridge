@@ -23,7 +23,7 @@ class APIDataBridge(object):
         src = self.retreiver
         for worker in workers:
             logger.debug('adapting worker {}'.format(worker.__name__))
-            setattr(self, "{}_queue".format(worker.__name__), 
+            setattr(self, "{}_queue".format(worker.__name__),
                     Queue(maxsize=250))
             self.workers[worker.__name__] = worker(
                 src,

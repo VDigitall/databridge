@@ -14,7 +14,7 @@ class RetreiverForward(gevent.Greenlet):
         self.queue = queue
         self.empty_response_delay = 5
         self.full_queue_delay = 3
-        self.delay = 0.4
+        self.delay = 2
         self.flt = filter_func
         self.logger = logger
 
@@ -50,6 +50,8 @@ class RetreiverForward(gevent.Greenlet):
                 raise gevent.GreenletExit
             except Exception as e:
                 self.logger.error("{} failed on {}".format(self.__class__, e))
+                return 0
+        return 1
         self.logger.warn('{} finished'.format(self.__class__))
 
 
@@ -62,7 +64,7 @@ class RetreiverBackward(gevent.Greenlet):
         self.cookie = cookie
         self.queue = queue
         self.full_queue_delay = 3
-        self.delay = 0.4
+        self.delay = 1
         self.logger = logger
         self.flt = filter_func
 
@@ -98,3 +100,4 @@ class RetreiverBackward(gevent.Greenlet):
                 raise gevent.GreenletExit
 
         self.logger.warn('{} finished'.format(self.__class__))
+        return 0
